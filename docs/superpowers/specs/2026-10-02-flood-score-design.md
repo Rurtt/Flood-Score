@@ -26,11 +26,13 @@ Constraints: solo developer + AI agents, ~2 days, MVP only, but production-grade
 ## 2. Scope
 
 **MVP (build now)**
-1. Search address or drop pin → Flood Score 0–100 + label + evidence.
-2. Map of past flood reports around the point, with 300 m radius ring.
-3. Monthly bar chart (which months are risky).
-4. Data-source and bias disclaimer; "data updated X ago" indicator.
-5. Shareable URL (`/?lat=..&lng=..`).
+1. Homepage overview: Bangkok flood heatmap + top 10 most-flooded districts + one search box.
+2. Area pages `/khet/[district]` (optional `?khwaeng=[subdistrict]`): district/subdistrict flood summary.
+3. Search address, place name, district or subdistrict (typo-tolerant), or drop pin → Flood Score 0–100 + label + evidence.
+4. Map of past flood reports around the point, with 300 m radius ring.
+5. Monthly bar chart (which months are risky).
+6. Data-source and bias disclaimer; "data updated X ago" indicator.
+7. Shareable URLs (`/check?lat=..&lng=..`, `/khet/[district]`).
 
 **Deferred — the design must leave room (see §8)**
 - v1.1: optional daily destination (work/university) and "can I get there on a rainy day" route check; GISTDA satellite flood zones; areas outside Bangkok.
@@ -133,12 +135,15 @@ Constants: score radius fixed at 300 m (the reference grid is computed with the 
   Returns `{score, label, weighted_count, report_count, years_with_reports, years_covered, monthly_counts[12], latest_report_at, data_updated_at, score_version}`.
 - `flood_points_v1(lat, lng, radius_m int default 300) returns table(lat, lng, reported_at, state)` — max 500 rows, newest first; radius_m allowed 100–1000.
 
-Both: `security definer`, `set search_path = ''`, `stable`, raise an error if the point is outside Bangkok bounds (and, for points, if radius is outside 100–1000).
+- `flood_overview_v1() returns jsonb` — heatmap cells (from `score_reference`: grid point + weighted_count) and district ranking `{district, weighted_count, reports_this_year, rank}` for all 50 districts.
+- `flood_area_v1(district text, subdistrict text default null) returns jsonb` — rank among districts, yearly counts, monthly counts, subdistrict ranking inside the district, latest report. Unknown names raise an error.
+
+All RPCs: `security definer`, `set search_path = ''`, `stable`; point RPCs raise an error if the point is outside Bangkok bounds (and, for points, if radius is outside 100–1000).
 
 ### Security
 
 - RLS enabled on every table; no policies granting `anon`/`authenticated` table access. Revoke all table privileges from `anon`, `authenticated`.
-- `grant execute` on the two RPCs to the role used by the web app only.
+- `grant execute` on the four RPCs to the role used by the web app only.
 - Service-role key exists only as a GitHub Actions secret (ingest). Never in Vercel, never `NEXT_PUBLIC_*`.
 - Separate Supabase projects for dev and prod.
 - Supabase security advisor run before first deploy; all warnings fixed.
@@ -176,6 +181,8 @@ Fallback if GitHub Actions proves too hard for the owner: Vercel Cron daily call
 | --- | --- | --- |
 | `GET /api/v1/score?lat&lng` | `flood_score_v1` | `s-maxage=3600, stale-while-revalidate=86400` |
 | `GET /api/v1/points?lat&lng` | `flood_points_v1` | same |
+| `GET /api/v1/overview` | `flood_overview_v1` | `s-maxage=3600, stale-while-revalidate=86400` |
+| `GET /api/v1/area?district&subdistrict` | `flood_area_v1` | same |
 | `GET /api/v1/status` | latest successful `ingest_runs` | `s-maxage=300` |
 
 - zod validation; lat/lng rounded to a ~50 m grid before the DB call and cache key, so nearby searches share cache.
@@ -183,14 +190,23 @@ Fallback if GitHub Actions proves too hard for the owner: Vercel Cron daily call
 - Rate limit: Vercel Firewall rule on `/api/*`, ~60 req/min/IP (verify plan support; Upstash as fallback).
 - Geocoding: browser calls MapTiler directly with a domain-restricted key.
 
+### Search and typo handling (no AI)
+
+User input is error-prone (misspellings, partial addresses). Handled in three layers, no LLM (cost, latency, confident wrong guesses, prompt-injection surface):
+
+1. District/subdistrict names: client-side fuzzy match (edit distance) against a static list of ~230 names generated from the data, after normalising (strip "เขต", "แขวง", whitespace) and including English names (e.g. "Prawet"). Shows "คุณหมายถึง ประเวศ?". Area matches are listed first in autocomplete.
+2. Addresses/place names: geocoder autocomplete (typo-tolerant) as the user types.
+3. Human confirmation: before scoring, the resolved point is shown as a draggable pin; the user confirms or drags it. This catches every error the first two layers miss.
+
 ## 7. Frontend
 
-Single page `/`, mobile-first, Thai UI (Noto Sans Thai or IBM Plex Sans Thai). Visual design done with the ui-ux-pro-max skill during implementation.
+Pages: `/` (overview + search), `/check?lat=..&lng=..` (point result), `/khet/[district]` (area summary; statically generated per district, revalidated hourly, indexable by search engines). Mobile-first, Thai UI (Noto Sans Thai or IBM Plex Sans Thai). Visual design done with the ui-ux-pro-max skill during implementation.
 
-- Search box (MapTiler geocoding) + tap-to-pin on MapLibre map.
+- Homepage: heatmap of Bangkok (MapLibre heatmap layer from overview cells), top 10 districts list linking to `/khet/...`, single search box.
+- Search box (area fuzzy match + MapTiler geocoding) + tap-to-pin on MapLibre map; draggable pin confirmation before scoring.
 - Map: report points + 300 m ring.
 - Result card: big score, label, "เสี่ยงกว่า X% ของพื้นที่กรุงเทพ", evidence list, monthly bar chart, disclaimer (source = Traffy, biased toward areas where people report), data-updated time.
-- State in URL for sharing.
+- State in URL for sharing (`/check?lat&lng`, `/khet/[district]`).
 - Accessibility: risk never conveyed by color alone, full keyboard use, result announced via `aria-live`.
 - Security headers in `next.config`: CSP (self + MapTiler domains), HSTS, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`.
 
@@ -208,11 +224,12 @@ Single page `/`, mobile-first, Thai UI (Noto Sans Thai or IBM Plex Sans Thai). V
 
 | Layer | Tool | Cases |
 | --- | --- | --- |
-| DB security | pgTAP | anon cannot select/insert `flood_reports`; only the two RPCs executable |
+| DB security | pgTAP | anon cannot select/insert any table; only the four RPCs executable |
 | Score | pgTAP | fixture data with known answers: decay, percentile, labels, zero-report case, out-of-bounds and bad radius errors |
 | Ingest | Vitest | Traffy mapping, zod rejects, > 20 % reject fails run, 1,000-cap split, idempotent upsert |
 | API | Vitest | 400 / 422 / 503, no stack leak, cache headers |
-| Main flow | Playwright | search → score shown → share link reproduces result (fixture data, no live Traffy) |
+| Search | Vitest | fuzzy match: "ประเวท" → ประเวศ, "เขตลาดกระบัง" → ลาดกระบัง, "Prawet" → ประเวศ, nonsense → no match |
+| Main flow | Playwright | homepage shows heatmap + top 10 → search → confirm pin → score shown → share link reproduces result; district page loads (fixture data, no live Traffy) |
 | Reality check | script | spike districts rank as expected |
 
 CI (`ci.yml`, every PR): lint → typecheck → Vitest → `supabase db reset` + pgTAP → Playwright.
@@ -223,5 +240,6 @@ Deploy: Vercel auto-deploys `main`. Prod migrations via manual `db-push.yml` (`s
 1. Traffy 1,000-row cap: does `start`/`end` accept datetimes for window splitting, or must backfill rely on the CSV?
 2. data.bangkok.go.th Traffy CSV license is "not specified" — fine for a course project; ask BMA before a public launch.
 3. Vercel Hobby limits: cron frequency, function duration, Firewall rate-limit availability.
-4. MapTiler free-tier quota and domain restriction setup.
+4. MapTiler free-tier quota, domain restriction, and Thai address quality; if Thai results are poor, switch geocoder to Longdo Map.
 5. Supabase and Vercel MCP servers were not loaded in the brainstorming session; restart Claude Code before implementation.
+6. Cut order if time runs short: subdistrict view on area pages first, then static generation of area pages (fall back to on-demand).
