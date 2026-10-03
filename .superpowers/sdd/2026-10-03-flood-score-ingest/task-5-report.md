@@ -69,4 +69,27 @@ After export, CI runs `node supabase/tests/areas-load-rpc.mjs` on its fresh empt
 
 ## Concerns and limits
 
+## Follow-up: CI required-field fail-fast correction
+
+Reopened at base 4fe37cb. The original AND-list allowed missing API_URL or SERVICE_ROLE_KEY to continue because Bash `set -e` exempts non-final AND-list commands. Replaced it with three separate `test -n` statements before masks or GITHUB_ENV writes. Pins, audit, full Supabase startup, stdout privacy, CLI error propagation and ordering remain unchanged.
+
+Command: `C:\Program Files\nodejs\node.exe .task5-ci-check.mjs` (temporary harness removed afterward). Parsed actual YAML with js-yaml, extracted the exact env-export run block, and executed through `C:/Program Files/Git/bin/bash.exe -c` with fake npx. Only invented credentials were used. Each scenario had its own temporary GITHUB_ENV; finally cleanup removed all temporary files. RED substituted the original AND-list into the extracted block; GREEN executed the revised block verbatim. Assertions checked exit status, mask/export presence and exact successful mask lines/export content.
+
+Actual output (harness exit 0):
+
+```text
+RED all-present: exit=0 exported=true masked=true
+RED missing-url: exit=0 exported=true masked=true
+RED missing-service: exit=0 exported=true masked=true
+RED missing-anon: exit=1 exported=false masked=false
+RED cli-error: exit=7 exported=false masked=false
+GREEN all-present: exit=0 exported=true masked=true
+GREEN missing-url: exit=1 exported=false masked=false
+GREEN missing-service: exit=1 exported=false masked=false
+GREEN missing-anon: exit=1 exported=false masked=false
+GREEN cli-error: exit=7 exported=false masked=false
+```
+
+Every missing field now fails before masks/export. CLI failure still propagates exit 7. No package-wide suite was run for this shell-only fix; no database writes or resets occurred. Follow-up commit scope is CI guard and report only.
+
 The full fresh GitHub Actions job was not run from this workstation; startup semantics, status format, YAML syntax and actual local API integration were verified separately. Start/finish bookkeeping errors deliberately propagate; failed data/refresh work returns failed with only acknowledged batch counts. An ambiguous network failure after a database commit cannot establish exact server-side writes; idempotent source/source_id upserts allow safe replay. Refresh updates the global score reference using current reports; test rows/runs are removed exactly, and the existing real boundaries/grid are preserved. Task 6 audit/dependency policy is out of scope.
