@@ -19,7 +19,7 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
-      - run: npx tsc --noEmit
+      - run: npm run typecheck
       - run: npm test
 
       - name: No Supabase key exposed to the browser
