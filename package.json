@@ -10,7 +10,9 @@
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",
     "fetch-areas": "node ingest/fetch-areas.ts",
-    "load-areas": "node --env-file-if-exists=.env.ingest ingest/load-areas.ts"
+    "load-areas": "node --env-file-if-exists=.env.ingest ingest/load-areas.ts",
+    "ingest": "node --env-file-if-exists=.env.ingest ingest/run.ts",
+    "backfill": "node --env-file-if-exists=.env.ingest ingest/backfill.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
