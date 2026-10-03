@@ -5,32 +5,70 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
 
       - name: No Supabase key exposed to the browser
-        run: "! grep -rn 'NEXT_PUBLIC_SUPABASE' app lib"
+        run: |
+          if grep -rl 'NEXT_PUBLIC_SUPABASE' app lib; then
+            echo 'Supabase browser key variable found' >&2
+            exit 1
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              exit "$status"
+            fi
+          fi
 
       # Uses the Supabase CLI pinned in package-lock.json, same version as local
-      - name: Start database and apply migrations
-        run: npx supabase db start
+      - name: Start local Supabase and apply migrations
+        # Startup prints local credentials; keep them out of the Actions log.
+        run: npx supabase start > /tmp/supabase-start.log || { grep -viE "key|secret|jwt|password" /tmp/supabase-start.log; exit 1; }
+
+      - name: Export local Supabase env for integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          status_env="$(npx supabase status -o env)"
+          api_url="$(printf '%s\n' "$status_env" | sed -n 's/^API_URL="\(.*\)"$/\1/p')"
+          service_key="$(printf '%s\n' "$status_env" | sed -n 's/^SERVICE_ROLE_KEY="\(.*\)"$/\1/p')"
+          anon_key="$(printf '%s\n' "$status_env" | sed -n 's/^ANON_KEY="\(.*\)"$/\1/p')"
+          test -n "$api_url"
+          test -n "$service_key"
+          test -n "$anon_key"
+          echo "::add-mask::$service_key"
+          echo "::add-mask::$anon_key"
+          printf 'SUPABASE_URL=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n' "$api_url" "$service_key" >> "$GITHUB_ENV"
+
+      # This regression requires the fresh CI database, before fixtures or real boundaries.
+      - name: Area load RPC regression
+        run: node supabase/tests/areas-load-rpc.mjs
+
+      - run: npm test
 
       - name: pgTAP tests
         run: npx supabase test db
+
+      # Spec success criterion 4. INFO-level "RLS enabled, no policy" is intended (RPC-only reads).
+      - name: Security advisor
+        run: npx supabase db advisors --local --type security --fail-on warn
 
       - name: Generated types are up to date
         run: |

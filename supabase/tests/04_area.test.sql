@@ -1,5 +1,6 @@
 begin;
 select plan(16);
+truncate public.flood_reports, public.ingest_runs, public.score_reference, public.areas; -- rolled back at the end
 
 insert into public.areas (level, district_th, name_th, name_en, geom) values
   ('district', 'ประเวศ', 'ประเวศ', 'Prawet',

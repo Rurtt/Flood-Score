@@ -1,0 +1,48 @@
+name: Ingest
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+    inputs:
+      task:
+        description: Script to run
+        type: choice
+        options: [run, backfill, load-areas]
+        default: run
+
+permissions:
+  contents: read
+
+# All production database writers share this queue, including manual migrations.
+concurrency:
+  group: production-database
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --omit=dev
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Run ingest script
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$TASK" in
+            run|backfill|load-areas) ;;
+            *) echo 'Unsupported ingest task' >&2; exit 1 ;;
+          esac
+          node "ingest/$TASK.ts"
+        env:
+          TASK: ${{ inputs.task || 'run' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

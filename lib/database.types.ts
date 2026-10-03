@@ -106,6 +106,9 @@ export type Database = {
 "in_bangkok":
 { Args: { "lat": number,"lng": number }; Returns: boolean
                            },
+"load_areas":
+{ Args: { "payload": Json }; Returns: undefined
+                           },
 "refresh_score_reference":
 { Args: Record<PropertyKey, never>; Returns: undefined
                            },

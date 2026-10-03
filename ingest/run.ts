@@ -1,0 +1,12 @@
+// Re-fetch today and the two previous Bangkok calendar days to recover a missed hourly run.
+import { serviceClient } from "./db.ts";
+import { runIngest } from "./pipeline.ts";
+import { createStore } from "./store.ts";
+import { bangkokDate } from "./traffy.ts";
+
+const now = Date.now();
+const window = { start: bangkokDate(new Date(now - 2 * 86400_000)), end: bangkokDate(new Date(now)) };
+const result = await runIngest(createStore(serviceClient()), window);
+console.log(JSON.stringify({ window, ...result }));
+if (result.status === "failed") process.exitCode = 1;
+if (result.status === "partial") console.log(`::warning::Ingest run partial: ${result.rowsUpserted} upserted, ${result.rowsRejected} rejected${result.error ? `: ${result.error}` : ""}`);
