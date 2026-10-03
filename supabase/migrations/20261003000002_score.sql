@@ -30,7 +30,7 @@ begin
          generate_series(100.32, 100.94, 0.0046) as lng
   ) g
   -- ponytail: bbox fallback until Plan 2 loads district polygons into public.areas
-  where not exists (select 1 from public.areas)
+  where not exists (select 1 from public.areas b where b.level = 'district')
      or exists (select 1 from public.areas a
                 where a.level = 'district' and extensions.st_covers(a.geom, g.pt));
 end $$;
@@ -49,6 +49,8 @@ declare
   v_score      int;
   v_first_year int;
   v_updated    timestamptz;
+  v_district    text;
+  v_subdistrict text;
 begin
   if not public.in_bangkok(lat, lng) then
     raise exception 'outside_bangkok';
@@ -81,6 +83,11 @@ begin
   v_score := case when v_rc = 0 or v_ref_n = 0 then 0
                   else round(100.0 * v_below / v_ref_n)::int end;
 
+  select a.name_th into v_district from public.areas a
+   where a.level = 'district' and extensions.st_covers(a.geom, p) order by a.name_th limit 1;
+  select a.name_th into v_subdistrict from public.areas a
+   where a.level = 'subdistrict' and extensions.st_covers(a.geom, p) order by a.name_th limit 1;
+
   select extract(year from min(r.reported_at) at time zone 'Asia/Bangkok')::int
     into v_first_year from public.flood_reports r;
   select max(i.finished_at) into v_updated
@@ -100,6 +107,8 @@ begin
     'monthly_counts', v_monthly,
     'latest_report_at', v_latest,
     'data_updated_at', v_updated,
+    'district', v_district,
+    'subdistrict', v_subdistrict,
     'score_version', 1
   );
 end $$;

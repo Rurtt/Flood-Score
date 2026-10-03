@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(24);
 
 -- Fixture point in Prawet (13.7167, 100.695). 0.001 deg lat is ~111 m (inside 300 m), 0.004 is ~445 m (outside).
 
@@ -48,6 +48,10 @@ select is((public.flood_score_v1(13.7167, 100.695)->>'years_with_reports')::int,
           case when extract(year from now() at time zone 'Asia/Bangkok') = 2025 then 1 else 2 end,
           'years with reports');
 
+-- no areas rows: area names are null
+select ok((public.flood_score_v1(13.7167, 100.695)->'district') = 'null'::jsonb, 'district null without areas');
+select ok((public.flood_score_v1(13.7167, 100.695)->'subdistrict') = 'null'::jsonb, 'subdistrict null without areas');
+
 -- input validation
 select throws_ok($$select public.flood_score_v1(14.03, 100.62)$$, 'P0001', 'outside_bangkok', 'Rangsit rejected');
 select throws_ok($$select public.flood_score_v1(null, 100.6)$$, 'P0001', 'outside_bangkok', 'null input rejected');
@@ -57,7 +61,21 @@ select public.refresh_score_reference();
 create temp table c1 as select count(*) as n from public.score_reference where score_version = 1;
 select public.refresh_score_reference();
 select is((select count(*) from public.score_reference where score_version = 1), (select n from c1), 'refresh idempotent');
+select ok((select n from c1) > 0, 'refresh produced rows');
 select ok(not has_function_privilege('anon', 'public.refresh_score_reference()', 'execute'), 'anon cannot refresh');
+
+-- only a subdistrict row exists: bbox fallback must still apply
+insert into public.areas (level, district_th, name_th, name_en, geom) values
+  ('subdistrict', 'ประเวศ', 'หนองบอน', 'Nong Bon',
+   extensions.st_geogfromtext('SRID=4326;MULTIPOLYGON(((100.6 13.6,100.8 13.6,100.8 13.8,100.6 13.8,100.6 13.6)))'));
+select public.refresh_score_reference();
+select ok((select count(*) from public.score_reference where score_version = 1) > 0, 'fallback survives subdistrict-only areas');
+select is(public.flood_score_v1(13.7167, 100.695)->>'subdistrict', 'หนองบอน', 'score names subdistrict');
+select ok((public.flood_score_v1(13.7167, 100.695)->'district') = 'null'::jsonb, 'district still null');
+insert into public.areas (level, district_th, name_th, name_en, geom) values
+  ('district', 'ประเวศ', 'ประเวศ', 'Prawet',
+   extensions.st_geogfromtext('SRID=4326;MULTIPOLYGON(((100.6 13.6,100.8 13.6,100.8 13.8,100.6 13.8,100.6 13.6)))'));
+select is(public.flood_score_v1(13.7167, 100.695)->>'district', 'ประเวศ', 'score names district');
 
 select * from finish();
 rollback;

@@ -1,5 +1,5 @@
 begin;
-select plan(13);
+select plan(16);
 
 insert into public.areas (level, district_th, name_th, name_en, geom) values
   ('district', 'ประเวศ', 'ประเวศ', 'Prawet',
@@ -34,6 +34,18 @@ select is(public.flood_area_v1('ประเวศ')->'subdistricts'->0->>'subdi
 select is((public.flood_area_v1('ประเวศ', 'หนองบอน')->>'report_count')::int, 3, 'subdistrict filter');
 select throws_ok($$select public.flood_area_v1('ประเวท')$$, 'P0001', 'unknown_area', 'misspelt district rejected');
 select throws_ok($$select public.flood_area_v1('ประเวศ', 'ไม่มี')$$, 'P0001', 'unknown_area', 'unknown subdistrict rejected');
+
+-- ranking is driven by areas: zero-report district present, unknown district absent
+insert into public.areas (level, district_th, name_th, name_en, geom) values
+  ('district', 'บางเขน', 'บางเขน', 'Bang Khen',
+   extensions.st_geogfromtext('SRID=4326;MULTIPOLYGON(((100.55 13.85,100.6 13.85,100.6 13.9,100.55 13.9,100.55 13.85)))'));
+insert into public.flood_reports (source_id, reported_at, geom, district)
+values ('rs1', now(), extensions.st_setsrid(extensions.st_makepoint(100.9, 13.9), 4326)::extensions.geography, 'รังสิต');
+select is((select (d->>'weighted_count')::float8 from jsonb_array_elements(public.flood_overview_v1()->'districts') d
+            where d->>'district' = 'บางเขน'), 0::float8, 'zero-report district listed with weighted_count 0');
+select ok((public.flood_area_v1('บางเขน')->>'district_rank') is not null, 'zero-report district has rank');
+select is((select count(*) from jsonb_array_elements(public.flood_overview_v1()->'districts') d
+            where d->>'district' = 'รังสิต'), 0::bigint, 'district not in areas excluded from ranking');
 
 -- status
 select is(public.flood_status_v1()->>'last_run_status', 'failed', 'latest run status');

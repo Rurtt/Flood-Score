@@ -1,14 +1,21 @@
 create function public.district_ranking()
 returns table (district text, weighted_count double precision, reports_this_year bigint, rank bigint)
 language sql stable set search_path = '' as $$
-  select r.district,
-         sum(public.report_weight(r.reported_at)),
-         count(*) filter (where extract(year from r.reported_at at time zone 'Asia/Bangkok')
-                              = extract(year from now() at time zone 'Asia/Bangkok')),
-         rank() over (order by sum(public.report_weight(r.reported_at)) desc)
-    from public.flood_reports r
-   where r.district is not null
-   group by r.district
+  with agg as (
+    select r.district,
+           sum(public.report_weight(r.reported_at)) as wc,
+           count(*) filter (where extract(year from r.reported_at at time zone 'Asia/Bangkok')
+                                = extract(year from now() at time zone 'Asia/Bangkok')) as ty
+      from public.flood_reports r
+     where r.district is not null
+     group by r.district)
+  select a.name_th,
+         coalesce(g.wc, 0)::double precision,
+         coalesce(g.ty, 0)::bigint,
+         rank() over (order by coalesce(g.wc, 0) desc, a.name_th)
+    from public.areas a
+    left join agg g on g.district = a.name_th
+   where a.level = 'district'
 $$;
 
 create function public.flood_overview_v1()
@@ -22,7 +29,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
         from public.score_reference s
        where s.score_version = 1 and s.weighted_count > 0), '[]'::jsonb),
     'districts', coalesce((
-      select jsonb_agg(to_jsonb(d) order by d.rank) from public.district_ranking() d), '[]'::jsonb),
+      select jsonb_agg(to_jsonb(d) order by d.rank, d.district) from public.district_ranking() d), '[]'::jsonb),
     'total_reports', (select count(*) from public.flood_reports),
     'first_report_at', (select min(r.reported_at) from public.flood_reports r),
     'data_updated_at', (select max(i.finished_at) from public.ingest_runs i where i.status in ('ok', 'partial'))
@@ -64,7 +71,7 @@ begin
         left join (select extract(month from r.reported_at at time zone 'Asia/Bangkok')::int as mo, count(*) as n
                      from r group by 1) c on c.mo = m.m),
     'subdistricts', coalesce((
-      select jsonb_agg(jsonb_build_object('subdistrict', s.subdistrict, 'count', s.n) order by s.n desc)
+      select jsonb_agg(jsonb_build_object('subdistrict', s.subdistrict, 'count', s.n) order by s.n desc, s.subdistrict)
         from (select f.subdistrict, count(*) as n from public.flood_reports f
                where f.district = district_name and f.subdistrict is not null
                group by 1) s), '[]'::jsonb),
