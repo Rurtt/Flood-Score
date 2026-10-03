@@ -1,5 +1,5 @@
 begin;
-select plan(13);
+select plan(14);
 
 -- RLS on every table
 select ok((select relrowsecurity from pg_class where oid = 'public.flood_reports'::regclass), 'RLS on flood_reports');
@@ -23,6 +23,10 @@ reset role;
 
 -- PDPA: no free-text reporter columns
 select hasnt_column('public', 'flood_reports', 'description', 'no reporter text stored');
+
+-- new functions must not be executable by default
+create function public.zz_probe() returns int language sql as $$ select 1 $$;
+select ok(not has_function_privilege('anon', 'public.zz_probe()', 'execute'), 'new functions not executable by anon');
 
 select * from finish();
 rollback;
