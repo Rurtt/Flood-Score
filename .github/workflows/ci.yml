@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -23,7 +26,16 @@ jobs:
       - run: npm test
 
       - name: No Supabase key exposed to the browser
-        run: "! grep -rn 'NEXT_PUBLIC_SUPABASE' app lib"
+        run: |
+          if grep -rl 'NEXT_PUBLIC_SUPABASE' app lib; then
+            echo 'Supabase browser key variable found' >&2
+            exit 1
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              exit "$status"
+            fi
+          fi
 
       # Uses the Supabase CLI pinned in package-lock.json, same version as local
       - name: Start database and apply migrations
@@ -31,6 +43,10 @@ jobs:
 
       - name: pgTAP tests
         run: npx supabase test db
+
+      # Spec success criterion 4. INFO-level "RLS enabled, no policy" is intended (RPC-only reads).
+      - name: Security advisor
+        run: npx supabase db advisors --local --type security --fail-on warn
 
       - name: Generated types are up to date
         run: |

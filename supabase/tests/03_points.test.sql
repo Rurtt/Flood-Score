@@ -1,5 +1,6 @@
 begin;
 select plan(7);
+truncate public.flood_reports, public.ingest_runs, public.score_reference, public.areas; -- rolled back at the end
 
 insert into public.flood_reports (source_id, reported_at, geom, state)
 select 'p' || i, now() - (i || ' days')::interval,

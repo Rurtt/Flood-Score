@@ -1,5 +1,6 @@
 begin;
-select plan(24);
+select plan(26);
+truncate public.flood_reports, public.ingest_runs, public.score_reference, public.areas; -- rolled back at the end
 
 -- Fixture point in Prawet (13.7167, 100.695). 0.001 deg lat is ~111 m (inside 300 m), 0.004 is ~445 m (outside).
 
@@ -76,6 +77,13 @@ insert into public.areas (level, district_th, name_th, name_en, geom) values
   ('district', 'ประเวศ', 'ประเวศ', 'Prawet',
    extensions.st_geogfromtext('SRID=4326;MULTIPOLYGON(((100.6 13.6,100.8 13.6,100.8 13.8,100.6 13.8,100.6 13.6)))'));
 select is(public.flood_score_v1(13.7167, 100.695)->>'district', 'ประเวศ', 'score names district');
+
+-- concurrent refreshes (hourly ingest vs. load-areas) must not interleave
+select ok(pg_get_functiondef('public.refresh_score_reference()'::regprocedure) like '%pg_advisory_xact_lock%',
+          'refresh serializes with an advisory lock');
+-- service_role inherits an 8 s timeout through PostgREST; refresh needs more on real data
+select ok('statement_timeout=120s' = any(p.proconfig), 'refresh may run 120 s')
+from pg_proc p where p.oid = 'public.refresh_score_reference()'::regprocedure;
 
 select * from finish();
 rollback;

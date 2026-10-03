@@ -1,5 +1,5 @@
 begin;
-select plan(14);
+select plan(16);
 
 -- RLS on every table
 select ok((select relrowsecurity from pg_class where oid = 'public.flood_reports'::regclass), 'RLS on flood_reports');
@@ -27,6 +27,20 @@ select hasnt_column('public', 'flood_reports', 'description', 'no reporter text 
 -- new functions must not be executable by default
 create function public.zz_probe() returns int language sql as $$ select 1 $$;
 select ok(not has_function_privilege('anon', 'public.zz_probe()', 'execute'), 'new functions not executable by anon');
+
+-- catch-all: covers tables added by later migrations too
+select is_empty($$
+  select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f')
+     and (has_table_privilege('anon', c.oid, 'select, insert, update, delete, truncate, references, trigger')
+       or has_table_privilege('authenticated', c.oid, 'select, insert, update, delete, truncate, references, trigger'))
+$$, 'anon/authenticated hold no privilege on any public table or view');
+select is_empty($$
+  select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind = 'S'
+     and (has_sequence_privilege('anon', c.oid, 'usage, select, update')
+       or has_sequence_privilege('authenticated', c.oid, 'usage, select, update'))
+$$, 'anon/authenticated hold no privilege on any public sequence');
 
 select * from finish();
 rollback;
