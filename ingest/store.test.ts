@@ -34,6 +34,15 @@ describe.skipIf(!enabled)("createStore (local Supabase)", () => {
     expect(data?.find((r) => r.source_id === ids[0])?.state).toBe("เสร็จสิ้น");
     expect(new Date(data![0].reported_at).toISOString()).toBe("2026-09-15T15:44:31.000Z");
   });
+  it("expires stale running rows on startRun", async () => {
+    const old = await db.from("ingest_runs").insert({ source: "traffy", status: "running", started_at: new Date(Date.now() - 60 * 60_000).toISOString() }).select("id").single();
+    expect(old.error).toBeNull();
+    runIds.push(old.data!.id);
+    runIds.push(await createStore(db).startRun({ start: "2026-10-01", end: "2026-10-03" }));
+    const { data } = await db.from("ingest_runs").select("status,finished_at,error").eq("id", old.data!.id).single();
+    expect(data).toMatchObject({ status: "failed", error: "stale: exceeded job timeout" });
+    expect(data?.finished_at).not.toBeNull();
+  });
   it("records run counts, Bangkok window and truncated error", async () => {
     const store = createStore(db);
     const id = await store.startRun({ start: "2026-10-01", end: "2026-10-03" });

@@ -8,6 +8,9 @@ function check(error: { message: string } | null): void {
 export function createStore(db: Db): Store {
   return {
     async startRun({ start, end }) {
+      // A job killed by the workflow timeout never finishes its row; expire anything older than the 30-min limit plus margin.
+      const stale = await db.from("ingest_runs").update({ status: "failed", finished_at: new Date().toISOString(), error: "stale: exceeded job timeout" }).eq("status", "running").lt("started_at", new Date(Date.now() - 35 * 60_000).toISOString());
+      check(stale.error);
       const { data, error } = await db.from("ingest_runs").insert({ source: "traffy", status: "running", window_start: `${start}T00:00:00+07:00`, window_end: `${end}T23:59:59+07:00` }).select("id").single();
       if (error || !data) throw new Error(error?.message ?? "ingest_runs insert returned no id");
       return data.id;

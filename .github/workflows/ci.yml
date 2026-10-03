@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -40,7 +40,7 @@ jobs:
       # Uses the Supabase CLI pinned in package-lock.json, same version as local
       - name: Start local Supabase and apply migrations
         # Startup prints local credentials; keep them out of the Actions log.
-        run: npx supabase start > /tmp/supabase-start.log
+        run: npx supabase start > /tmp/supabase-start.log || { grep -viE "key|secret|jwt|password" /tmp/supabase-start.log; exit 1; }
 
       - name: Export local Supabase env for integration tests
         shell: bash

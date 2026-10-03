@@ -9,3 +9,4 @@ const started = Date.now();
 const result = await runIngest(createStore(serviceClient()), window);
 console.log(JSON.stringify({ window, ...result, seconds: Math.round((Date.now() - started) / 1000) }));
 if (result.status === "failed") process.exitCode = 1;
+if (result.status === "partial") console.log(`::warning::Ingest run partial: ${result.rowsUpserted} upserted, ${result.rowsRejected} rejected${result.error ? `: ${result.error}` : ""}`);
