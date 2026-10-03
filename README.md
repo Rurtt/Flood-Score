@@ -25,3 +25,9 @@ npx supabase test db     # pgTAP (database + security)
 `.github/workflows/ci.yml` runs every check on each pull request and on `main`.
 See results in the GitHub repo under **Actions**, or on the PR page. A red X means a check failed;
 click it to see the log. Nothing is deployed by CI; Vercel deploys `main` on its own.
+
+## Data sources
+
+- Flood reports: Traffy Fondue public API (`problem_type=น้ำท่วม`), loaded by `ingest/`.
+- District/subdistrict boundaries: © OpenStreetMap contributors, ODbL. Extract committed at
+  `ingest/data/bangkok-areas.json`; regenerate with `npm run fetch-areas`, load with `npm run load-areas`.

@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "fetch-areas": "node ingest/fetch-areas.ts",
+    "load-areas": "node --env-file-if-exists=.env.ingest ingest/load-areas.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
@@ -29,5 +31,6 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^5.0.3"
-  }
+  },
+  "type": "module"
 }
