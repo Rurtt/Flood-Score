@@ -1,4 +1,4 @@
-// Re-fetch the last 48 hours as Bangkok dates to recover a missed hourly run.
+// Re-fetch today and the two previous Bangkok calendar days to recover a missed hourly run.
 import { serviceClient } from "./db.ts";
 import { runIngest } from "./pipeline.ts";
 import { createStore } from "./store.ts";
