@@ -55,7 +55,7 @@ begin
   where s.level = 'subdistrict' and not exists (select 1 from pg_temp.new_areas d
     where d.level = 'district' and extensions.st_covers(d.g, extensions.st_pointonsurface(s.g)));
   if bad is not null then raise exception 'orphan_subdistrict: %', bad; end if;
-  delete from public.areas;
+  delete from public.areas where true;
   insert into public.areas (level, district_th, name_th, name_en, geom)
     select 'district', n.name_th, n.name_th, n.name_en, n.g::extensions.geography
     from pg_temp.new_areas n where n.level = 'district';
@@ -65,7 +65,7 @@ begin
       select d.name_th from pg_temp.new_areas d where d.level = 'district'
         and extensions.st_covers(d.g, extensions.st_pointonsurface(s.g))
       order by d.name_th limit 1) p where s.level = 'subdistrict';
-  update public.flood_reports set geom = geom;
+  update public.flood_reports set geom = geom where true;
 end $$;
 revoke execute on function public.set_report_area(), public.load_areas(jsonb) from public, anon, authenticated;
 grant execute on function public.set_report_area(), public.load_areas(jsonb) to service_role;
