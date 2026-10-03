@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: No Supabase key exposed to the browser
+        run: "! grep -rn 'NEXT_PUBLIC_SUPABASE' app lib"
+
+      # Uses the Supabase CLI pinned in package-lock.json, same version as local
+      - name: Start database and apply migrations
+        run: npx supabase db start
+
+      - name: pgTAP tests
+        run: npx supabase test db
+
+      - name: Generated types are up to date
+        run: |
+          npx supabase gen types typescript --local > /tmp/types.ts
+          diff -u lib/database.types.ts /tmp/types.ts
